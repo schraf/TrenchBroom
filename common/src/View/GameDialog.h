@@ -50,7 +50,7 @@ namespace TrenchBroom {
 
             // FIXME: return a tuple instead of taking in/out parameters
             static bool showNewDocumentDialog(QWidget* parent, std::string& gameName, Model::MapFormat& mapFormat);
-            static bool showOpenDocumentDialog(QWidget* parent, std::string& gameName, Model::MapFormat& mapFormat);
+            static bool showOpenDocumentDialog(QWidget* parent, std::string& gameName);
 
             std::string currentGameName() const;
             Model::MapFormat currentMapFormat() const;
@@ -59,11 +59,11 @@ namespace TrenchBroom {
             void gameSelected(const QString& gameName);
             void openPreferencesClicked();
         protected:
-            GameDialog(const QString& title, const QString& infoText, QWidget* parent = nullptr);
+            GameDialog(const QString& title, const QString& infoText, bool formatPrompt, QWidget* parent = nullptr);
 
-            void createGui(const QString& title, const QString& infoText);
+            void createGui(const QString& title, const QString& infoText, bool formatPrompt);
             QWidget* createInfoPanel(QWidget* parent, const QString& title, const QString& infoText);
-            QWidget* createSelectionPanel(QWidget* parent);
+            QWidget* createSelectionPanel(QWidget* parent, bool formatPrompt);
         private:
             void updateMapFormats(const std::string& gameName);
 
