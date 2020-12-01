@@ -21,6 +21,7 @@
 
 #include "Macros.h"
 #include "Model/AttributableNode.h"
+#include "Model/Entity.h"
 #include "Model/EntityAttributes.h"
 
 #include <kdl/compact_trie.h>
@@ -70,11 +71,11 @@ namespace TrenchBroom {
         bool AttributableNodeIndexQuery::execute(const AttributableNode* node, const std::string& value) const {
             switch (m_type) {
                 case Type_Exact:
-                    return node->hasAttribute(m_pattern, value);
+                    return node->entity().hasAttribute(m_pattern, value);
                 case Type_Prefix:
-                    return node->hasAttributeWithPrefix(m_pattern, value);
+                    return node->entity().hasAttributeWithPrefix(m_pattern, value);
                 case Type_Numbered:
-                    return node->hasNumberedAttribute(m_pattern, value);
+                    return node->entity().hasNumberedAttribute(m_pattern, value);
                 case Type_Any:
                     return true;
                 switchDefault()
@@ -82,15 +83,16 @@ namespace TrenchBroom {
         }
 
         std::vector<Model::EntityAttribute> AttributableNodeIndexQuery::execute(const AttributableNode* node) const {
+            const auto& entity = node->entity();
             switch (m_type) {
                 case Type_Exact:
-                    return node->attributeWithName(m_pattern);
+                    return entity.attributeWithName(m_pattern);
                 case Type_Prefix:
-                    return node->attributesWithPrefix(m_pattern);
+                    return entity.attributesWithPrefix(m_pattern);
                 case Type_Numbered:
-                    return node->numberedAttributes(m_pattern);
+                    return entity.numberedAttributes(m_pattern);
                 case Type_Any:
-                    return node->attributes();
+                    return entity.attributes();
                 switchDefault()
             }
         }
@@ -106,12 +108,12 @@ namespace TrenchBroom {
         AttributableNodeIndex::~AttributableNodeIndex() = default;
 
         void AttributableNodeIndex::addAttributableNode(AttributableNode* attributable) {
-            for (const EntityAttribute& attribute : attributable->attributes())
+            for (const EntityAttribute& attribute : attributable->entity().attributes())
                 addAttribute(attributable, attribute.name(), attribute.value());
         }
 
         void AttributableNodeIndex::removeAttributableNode(AttributableNode* attributable) {
-            for (const EntityAttribute& attribute : attributable->attributes())
+            for (const EntityAttribute& attribute : attributable->entity().attributes())
                 removeAttribute(attributable, attribute.name(), attribute.value());
         }
 

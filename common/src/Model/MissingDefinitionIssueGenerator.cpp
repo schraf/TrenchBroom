@@ -20,6 +20,7 @@
 #include "MissingDefinitionIssueGenerator.h"
 
 #include "Model/BrushNode.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/Issue.h"
 #include "Model/IssueQuickFix.h"
@@ -43,7 +44,7 @@ namespace TrenchBroom {
 
             std::string doGetDescription() const override {
                 const AttributableNode* attributableNode = static_cast<AttributableNode*>(node());
-                return attributableNode->classname() + " not found in entity definitions";
+                return attributableNode->name() + " not found in entity definitions";
             }
         };
 
@@ -65,7 +66,7 @@ namespace TrenchBroom {
         }
 
         void MissingDefinitionIssueGenerator::doGenerate(AttributableNode* node, IssueList& issues) const {
-            if (node->definition() == nullptr)
+            if (node->entity().definition() == nullptr)
                 issues.push_back(new MissingDefinitionIssue(node));
         }
     }

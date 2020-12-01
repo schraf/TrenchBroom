@@ -60,7 +60,9 @@ namespace TrenchBroom {
                 EntityConfig(),
                 FaceAttribsConfig(),
                 std::vector<SmartTag>(),
-                std::nullopt);
+                std::nullopt, // soft map bounds
+                {} // compilation tools
+            );
             const auto gamePath = IO::Disk::getCurrentWorkingDir() + IO::Path("fixture/test/Model/Game/Quake2");
             auto logger = NullLogger();
             GameImpl game(config, gamePath, logger);
@@ -113,8 +115,9 @@ namespace TrenchBroom {
                 IO::Path("textures/test"),
             }), textureCollections);
 
-            auto worldspawn = EntityNode();
-            worldspawn.addOrUpdateAttribute("_tb_textures", "textures/test;textures/skies/hub1");
+            auto worldspawn = EntityNode({
+                {"_tb_textures", "textures/test;textures/skies/hub1"}
+            });
 
             auto textureManager = Assets::TextureManager(0, 0, logger);
             game.loadTextureCollections(worldspawn, IO::Path(), textureManager, logger);

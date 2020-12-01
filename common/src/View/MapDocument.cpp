@@ -49,6 +49,7 @@
 #include "Model/EmptyAttributeValueIssueGenerator.h"
 #include "Model/EmptyBrushEntityIssueGenerator.h"
 #include "Model/EmptyGroupIssueGenerator.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/Game.h"
 #include "Model/GameFactory.h"
@@ -448,14 +449,14 @@ namespace TrenchBroom {
                         nodesToDetach.push_back(group);
                         nodesToAdd[parent].push_back(group);
                     },
-                    [&](auto&& thisLambda, Model::EntityNode* entity) {
-                        if (Model::isWorldspawn(entity->classname(), entity->attributes())) {
-                            entity->visitChildren(thisLambda);
-                            nodesToDetach.push_back(entity);
-                            nodesToDelete.push_back(entity);
+                    [&](auto&& thisLambda, Model::EntityNode* entityNode) {
+                        if (Model::isWorldspawn(entityNode->entity().classname(), entityNode->entity().attributes())) {
+                            entityNode->visitChildren(thisLambda);
+                            nodesToDetach.push_back(entityNode);
+                            nodesToDelete.push_back(entityNode);
                         } else {
-                            nodesToDetach.push_back(entity);
-                            nodesToAdd[parent].push_back(entity);
+                            nodesToDetach.push_back(entityNode);
+                            nodesToAdd[parent].push_back(entityNode);
                         }
                     },
                     [&](Model::BrushNode* brush) {
@@ -789,6 +790,57 @@ namespace TrenchBroom {
             select(faces);
         }
 
+        void MapDocument::selectTall(const vm::axis::type cameraAxis) {
+            const vm::vec3 cameraAbsDirection = vm::vec3::axis(cameraAxis);
+            const vm::bbox3 tallBounds = worldBounds().expand(-1.0); // we can't make a brush that is exactly as large as worldBounds
+
+            const FloatType min = vm::dot(tallBounds.min, cameraAbsDirection);
+            const FloatType max = vm::dot(tallBounds.max, cameraAbsDirection);
+
+            const vm::plane3 minPlane(min, cameraAbsDirection);
+            const vm::plane3 maxPlane(max, cameraAbsDirection);
+
+            const std::vector<Model::BrushNode*>& selectionBrushNodes = selectedNodes().brushes();
+            assert(!selectionBrushNodes.empty());
+
+            const Model::BrushBuilder brushBuilder(world(), worldBounds());
+            std::vector<Model::BrushNode*> tallBrushes;
+            tallBrushes.reserve(selectionBrushNodes.size());
+
+            for (const Model::BrushNode* selectionBrushNode : selectionBrushNodes) {
+                const Model::Brush& selectionBrush = selectionBrushNode->brush();
+                
+                std::vector<vm::vec3> tallVertices;
+                tallVertices.reserve(2 * selectionBrush.vertexCount());
+
+                for (const Model::BrushVertex* vertex : selectionBrush.vertices()) {
+                    tallVertices.push_back(minPlane.project_point(vertex->position()));
+                    tallVertices.push_back(maxPlane.project_point(vertex->position()));
+                }
+
+                brushBuilder.createBrush(tallVertices, Model::BrushFaceAttributes::NoTextureName)
+                    .visit(kdl::overload(
+                        [&](Model::Brush&& b) {
+                            tallBrushes.push_back(world()->createBrush(std::move(b)));
+                        },
+                        [&](const Model::BrushError e) {
+                            logger().error() << "Could not create selection brush: " << e;
+                        }
+                    ));
+            }
+
+            // delete the original selection brushes before searching for the objects to select
+            Transaction transaction(this, "Select Tall");
+            deleteObjects();
+
+            const auto nodesToSelect = kdl::vec_filter(
+                Model::collectContainedNodes(std::vector<Model::Node*>{world()}, tallBrushes), 
+                [&](const auto* node) { return editorContext().selectable(node); });
+            kdl::vec_clear_and_delete(tallBrushes);
+
+            select(nodesToSelect);
+        }
+
         void MapDocument::deselectAll() {
             if (hasSelection()) {
                 m_repeatStack->clearOnNextPush();
@@ -1011,8 +1063,9 @@ namespace TrenchBroom {
         Model::EntityNode* MapDocument::createPointEntity(const Assets::PointEntityDefinition* definition, const vm::vec3& delta) {
             ensure(definition != nullptr, "definition is null");
 
-            auto* entity = m_world->createEntity();
-            entity->addOrUpdateAttribute(Model::AttributeNames::Classname, definition->name());
+            auto* entity = m_world->createEntity(Model::Entity({
+                {Model::AttributeNames::Classname, definition->name()}
+            }));
 
             std::stringstream name;
             name << "Create " << definition->name();
@@ -1032,7 +1085,7 @@ namespace TrenchBroom {
             const auto brushes = selectedNodes().brushes();
             assert(!brushes.empty());
 
-            auto* entity = m_world->createEntity();
+            auto entity = Model::Entity();
 
             // if all brushes belong to the same entity, and that entity is not worldspawn, copy its properties
             auto* entityTemplate = brushes.front()->entity();
@@ -1045,11 +1098,12 @@ namespace TrenchBroom {
                 }
 
                 if (entityTemplate != nullptr) {
-                    entity->setAttributes(entityTemplate->attributes());
+                    entity = entityTemplate->entity();
                 }
             }
 
-            entity->addOrUpdateAttribute(Model::AttributeNames::Classname, definition->name());
+            entity.addOrUpdateAttribute(Model::AttributeNames::Classname, definition->name());
+            auto* entityNode = m_world->createEntity(std::move(entity));
 
             std::stringstream name;
             name << "Create " << definition->name();
@@ -1058,11 +1112,11 @@ namespace TrenchBroom {
 
             const Transaction transaction(this, name.str());
             deselectAll();
-            addNode(entity, parentForNodes(nodes));
-            reparentNodes(entity, nodes);
+            addNode(entityNode, parentForNodes(nodes));
+            reparentNodes(entityNode, nodes);
             select(nodes);
 
-            return entity;
+            return entityNode;
         }
 
         Model::GroupNode* MapDocument::groupSelection(const std::string& name) {
@@ -2278,12 +2332,12 @@ namespace TrenchBroom {
                 [] (auto&& thisLambda, Model::WorldNode* world) { world->visitChildren(thisLambda); },
                 [] (auto&& thisLambda, Model::LayerNode* layer) { layer->visitChildren(thisLambda); },
                 [] (auto&& thisLambda, Model::GroupNode* group) { group->visitChildren(thisLambda); },
-                [&](Model::EntityNode* entity)                  {
-                    const auto modelSpec = Assets::safeGetModelSpecification(logger, entity->classname(), [&]() {
-                        return entity->modelSpecification();
+                [&](Model::EntityNode* entityNode)                  {
+                    const auto modelSpec = Assets::safeGetModelSpecification(logger, entityNode->entity().classname(), [&]() {
+                        return entityNode->entity().modelSpecification();
                     });
                     const auto* frame = manager.frame(modelSpec);
-                    entity->setModelFrame(frame);
+                    entityNode->setModelFrame(frame);
                 },
                 [] (Model::BrushNode*) {}
             );
@@ -2433,11 +2487,23 @@ namespace TrenchBroom {
         }
 
         static auto makeInitializeNodeTagsVisitor(Model::TagManager& tagManager) {
-            return [&](auto&& thisLambda, auto* node) { node->initializeTags(tagManager); node->visitChildren(thisLambda); };
+            return kdl::overload(
+                [&](auto&& thisLambda, Model::WorldNode* world) { world->initializeTags(tagManager); world->visitChildren(thisLambda); },
+                [&](auto&& thisLambda, Model::LayerNode* layer) { layer->initializeTags(tagManager); layer->visitChildren(thisLambda); },
+                [&](auto&& thisLambda, Model::GroupNode* group) { group->initializeTags(tagManager); group->visitChildren(thisLambda); },
+                [&](auto&& thisLambda, Model::EntityNode* entity) { entity->initializeTags(tagManager); entity->visitChildren(thisLambda); },
+                [&](Model::BrushNode* brush) { brush->initializeTags(tagManager); }
+            );
         }
 
         static auto makeClearNodeTagsVisitor() {
-            return [](auto&& thisLambda, auto* node) { node->clearTags(); node->visitChildren(thisLambda); };
+            return kdl::overload(
+                [](auto&& thisLambda, Model::WorldNode* world) { world->clearTags(); world->visitChildren(thisLambda); },
+                [](auto&& thisLambda, Model::LayerNode* layer) { layer->clearTags(); layer->visitChildren(thisLambda); },
+                [](auto&& thisLambda, Model::GroupNode* group) { group->clearTags(); group->visitChildren(thisLambda); },
+                [](auto&& thisLambda, Model::EntityNode* entity) { entity->clearTags(); entity->visitChildren(thisLambda); },
+                [](Model::BrushNode* brush) { brush->clearTags(); }
+            );
         }
 
         void MapDocument::initializeNodeTags(MapDocument* document) {

@@ -23,6 +23,7 @@
 #include "Model/BrushNode.h"
 #include "Model/BrushFace.h"
 #include "Model/ChangeBrushFaceAttributesRequest.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/GroupNode.h"
 #include "Model/LayerNode.h"
@@ -86,18 +87,20 @@ namespace TrenchBroom {
         }
 
         TEST_CASE_METHOD(SnapshotTest, "SnapshotTest.undoRotation", "[SnapshotTest]") {
-            auto* entity = new Model::EntityNode();
-            entity->addOrUpdateAttribute(Model::AttributeNames::Classname, "test");
+            auto* entityNode = new Model::EntityNode({
+                {Model::AttributeNames::Classname, "test"}
+            });
 
-            document->addNode(entity, document->parentForNodes());            
-            CHECK(!entity->hasAttribute("angle"));
+            document->addNode(entityNode, document->parentForNodes());            
+            CHECK(!entityNode->entity().hasAttribute("angle"));
 
-            document->select(entity);
+            document->select(entityNode);
             document->rotateObjects(vm::vec3::zero(), vm::vec3::pos_z(), vm::to_radians(15.0));
-            CHECK(entity->attribute("angle") == std::string("15"));
+            CHECK(entityNode->entity().hasAttribute("angle"));
+            CHECK(*entityNode->entity().attribute("angle") == "15");
 
             document->undoCommand();
-            CHECK(!entity->hasAttribute("angle"));
+            CHECK(!entityNode->entity().hasAttribute("angle"));
         }
     }
 }

@@ -24,6 +24,7 @@
 #include "Model/BrushNode.h"
 #include "Model/BrushFace.h"
 #include "Model/BrushFaceAttributes.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/LayerNode.h"
 #include "Model/ParallelTexCoordSystem.h"
@@ -131,16 +132,17 @@ namespace TrenchBroom {
             IO::TestParserStatus status;
             WorldReader reader(data);
 
-            auto world = reader.read(Model::MapFormat::Standard, worldBounds, status);
+            auto worldNode = reader.read(Model::MapFormat::Standard, worldBounds, status);
 
-            ASSERT_TRUE(world != nullptr);
-            ASSERT_EQ(1u, world->childCount());
-            auto* defaultLayer = dynamic_cast<Model::LayerNode*>(world->children().at(0));
+            ASSERT_TRUE(worldNode != nullptr);
+            ASSERT_EQ(1u, worldNode->childCount());
+            auto* defaultLayer = dynamic_cast<Model::LayerNode*>(worldNode->children().at(0));
             REQUIRE(defaultLayer != nullptr);
             REQUIRE(!defaultLayer->hasChildren());
 
-            ASSERT_TRUE(world->hasAttribute(Model::AttributeNames::Classname));
-            ASSERT_STREQ("yay", world->attribute("message").c_str());
+            CHECK(worldNode->entity().hasAttribute(Model::AttributeNames::Classname));
+            CHECK(worldNode->entity().hasAttribute("message"));
+            CHECK(*worldNode->entity().attribute("message") == "yay");
 
             CHECK(!defaultLayer->layerColor().has_value());
             CHECK(!defaultLayer->locked());
@@ -196,25 +198,26 @@ namespace TrenchBroom {
             IO::TestParserStatus status;
             WorldReader reader(data);
 
-            auto world = reader.read(Model::MapFormat::Standard, worldBounds, status);
+            auto worldNode = reader.read(Model::MapFormat::Standard, worldBounds, status);
 
-            ASSERT_TRUE(world != nullptr);
-            ASSERT_TRUE(world->hasAttribute(Model::AttributeNames::Classname));
-            ASSERT_STREQ("yay", world->attribute("message").c_str());
+            CHECK(worldNode != nullptr);
+            CHECK(worldNode->entity().hasAttribute(Model::AttributeNames::Classname));
+            CHECK(worldNode->entity().hasAttribute("message"));
+            CHECK(*worldNode->entity().attribute("message") == "yay");
 
-            ASSERT_EQ(1u, world->childCount());
-            Model::LayerNode* defaultLayer = dynamic_cast<Model::LayerNode*>(world->children().front());
+            ASSERT_EQ(1u, worldNode->childCount());
+            Model::LayerNode* defaultLayer = dynamic_cast<Model::LayerNode*>(worldNode->children().front());
             ASSERT_NE(nullptr, defaultLayer);
             ASSERT_EQ(1u, defaultLayer->childCount());
             ASSERT_EQ(Model::LayerNode::defaultLayerSortIndex(), defaultLayer->sortIndex());
 
-            Model::EntityNode* entity = static_cast<Model::EntityNode*>(defaultLayer->children().front());
-            ASSERT_TRUE(entity->hasAttribute("classname"));
-            ASSERT_STREQ("info_player_deathmatch", entity->attribute("classname").c_str());
-            ASSERT_TRUE(entity->hasAttribute("origin"));
-            ASSERT_STREQ("1 22 -3", entity->attribute("origin").c_str());
-            ASSERT_TRUE(entity->hasAttribute("angle"));
-            ASSERT_STREQ(" -1 ", entity->attribute("angle").c_str());
+            Model::EntityNode* entityNode = static_cast<Model::EntityNode*>(defaultLayer->children().front());
+            CHECK(entityNode->entity().hasAttribute("classname"));
+            CHECK(*entityNode->entity().attribute("classname") == "info_player_deathmatch");
+            CHECK(entityNode->entity().hasAttribute("origin"));
+            CHECK(*entityNode->entity().attribute("origin") == "1 22 -3");
+            CHECK(entityNode->entity().hasAttribute("angle"));
+            CHECK(*entityNode->entity().attribute("angle") == " -1 ");
         }
 
         TEST_CASE("WorldReaderTest.parseMapWithWorldspawnAndOneBrush", "[WorldReaderTest]") {
@@ -1195,14 +1198,15 @@ common/caulk
             IO::TestParserStatus status;
             WorldReader reader(data);
 
-            auto world = reader.read(Model::MapFormat::Standard, worldBounds, status);
+            auto worldNode = reader.read(Model::MapFormat::Standard, worldBounds, status);
 
-            ASSERT_TRUE(world != nullptr);
-            ASSERT_EQ(1u, world->childCount());
-            ASSERT_FALSE(world->children().front()->hasChildren());
+            ASSERT_TRUE(worldNode != nullptr);
+            ASSERT_EQ(1u, worldNode->childCount());
+            ASSERT_FALSE(worldNode->children().front()->hasChildren());
 
-            ASSERT_TRUE(world->hasAttribute(Model::AttributeNames::Classname));
-            ASSERT_STREQ("yay \\\"Mr. Robot!\\\"", world->attribute("message").c_str());
+            CHECK(worldNode->entity().hasAttribute(Model::AttributeNames::Classname));
+            CHECK(worldNode->entity().hasAttribute("message"));
+            CHECK(*worldNode->entity().attribute("message") == "yay \\\"Mr. Robot!\\\"");
         }
 
         TEST_CASE("WorldReaderTest.parseAttributeWithUnescapedPathAndTrailingBackslash", "[WorldReaderTest]") {
@@ -1216,14 +1220,15 @@ common/caulk
             IO::TestParserStatus status;
             WorldReader reader(data);
 
-            auto world = reader.read(Model::MapFormat::Standard, worldBounds, status);
+            auto worldNode = reader.read(Model::MapFormat::Standard, worldBounds, status);
 
-            ASSERT_TRUE(world != nullptr);
-            ASSERT_EQ(1u, world->childCount());
-            ASSERT_FALSE(world->children().front()->hasChildren());
+            ASSERT_TRUE(worldNode != nullptr);
+            ASSERT_EQ(1u, worldNode->childCount());
+            ASSERT_FALSE(worldNode->children().front()->hasChildren());
 
-            ASSERT_TRUE(world->hasAttribute(Model::AttributeNames::Classname));
-            ASSERT_STREQ("c:\\a\\b\\c\\", world->attribute("path").c_str());
+            CHECK(worldNode->entity().hasAttribute(Model::AttributeNames::Classname));
+            CHECK(worldNode->entity().hasAttribute("path"));
+            CHECK(*worldNode->entity().attribute("path") == "c:\\a\\b\\c\\");
         }
 
         TEST_CASE("WorldReaderTest.parseAttributeWithEscapedPathAndTrailingBackslash", "[WorldReaderTest]") {
@@ -1237,14 +1242,15 @@ common/caulk
             IO::TestParserStatus status;
             WorldReader reader(data);
 
-            auto world = reader.read(Model::MapFormat::Standard, worldBounds, status);
+            auto worldNode = reader.read(Model::MapFormat::Standard, worldBounds, status);
 
-            ASSERT_TRUE(world != nullptr);
-            ASSERT_EQ(1u, world->childCount());
-            ASSERT_FALSE(world->children().front()->hasChildren());
+            ASSERT_TRUE(worldNode != nullptr);
+            ASSERT_EQ(1u, worldNode->childCount());
+            ASSERT_FALSE(worldNode->children().front()->hasChildren());
 
-            ASSERT_TRUE(world->hasAttribute(Model::AttributeNames::Classname));
-            ASSERT_STREQ("c:\\\\a\\\\b\\\\c\\\\", world->attribute("path").c_str());
+            CHECK(worldNode->entity().hasAttribute(Model::AttributeNames::Classname));
+            CHECK(worldNode->entity().hasAttribute("path"));
+            CHECK(*worldNode->entity().attribute("path") == "c:\\\\a\\\\b\\\\c\\\\");
         }
 
         TEST_CASE("WorldReaderTest.parseAttributeTrailingEscapedBackslash", "[WorldReaderTest]") {
@@ -1259,14 +1265,15 @@ common/caulk
             IO::TestParserStatus status;
             WorldReader reader(data);
 
-            auto world = reader.read(Model::MapFormat::Standard, worldBounds, status);
+            auto worldNode = reader.read(Model::MapFormat::Standard, worldBounds, status);
 
-            ASSERT_TRUE(world != nullptr);
-            ASSERT_EQ(1u, world->childCount());
-            ASSERT_FALSE(world->children().front()->hasChildren());
+            ASSERT_TRUE(worldNode != nullptr);
+            ASSERT_EQ(1u, worldNode->childCount());
+            ASSERT_FALSE(worldNode->children().front()->hasChildren());
 
-            ASSERT_TRUE(world->hasAttribute(Model::AttributeNames::Classname));
-            ASSERT_STREQ("test\\\\", world->attribute("message").c_str());
+            CHECK(worldNode->entity().hasAttribute(Model::AttributeNames::Classname));
+            CHECK(worldNode->entity().hasAttribute("message"));
+            CHECK(*worldNode->entity().attribute("message") == "test\\\\");
         }
 
         // https://github.com/TrenchBroom/TrenchBroom/issues/1739
@@ -1281,14 +1288,15 @@ common/caulk
             IO::TestParserStatus status;
             WorldReader reader(data);
 
-            auto world = reader.read(Model::MapFormat::Standard, worldBounds, status);
+            auto worldNode = reader.read(Model::MapFormat::Standard, worldBounds, status);
 
-            ASSERT_TRUE(world != nullptr);
-            ASSERT_EQ(1u, world->childCount());
-            ASSERT_FALSE(world->children().front()->hasChildren());
+            ASSERT_TRUE(worldNode != nullptr);
+            ASSERT_EQ(1u, worldNode->childCount());
+            ASSERT_FALSE(worldNode->children().front()->hasChildren());
 
-            ASSERT_TRUE(world->hasAttribute(Model::AttributeNames::Classname));
-            ASSERT_STREQ("vm::line1\\nvm::line2", world->attribute("message").c_str());
+            CHECK(worldNode->entity().hasAttribute(Model::AttributeNames::Classname));
+            CHECK(worldNode->entity().hasAttribute("message"));
+            CHECK(*worldNode->entity().attribute("message") == "vm::line1\\nvm::line2");
         }
 
         /*

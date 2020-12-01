@@ -29,6 +29,7 @@
 #include "IO/TestParserStatus.h"
 #include "IO/TextureLoader.h"
 #include "Model/BrushFace.h"
+#include "Model/Entity.h"
 #include "Model/GameConfig.h"
 #include "Model/WorldNode.h"
 
@@ -92,11 +93,11 @@ namespace TrenchBroom {
         }
 
         std::unique_ptr<WorldNode> TestGame::doNewMap(const MapFormat format, const vm::bbox3& /* worldBounds */, Logger& /* logger */) const {
-            return std::make_unique<WorldNode>(format);
+            return std::make_unique<WorldNode>(Entity(), format);
         }
 
         std::unique_ptr<WorldNode> TestGame::doLoadMap(const MapFormat format, const vm::bbox3& /* worldBounds */, const IO::Path& /* path */, Logger& /* logger */) const {
-            return std::make_unique<WorldNode>(format);
+            return std::make_unique<WorldNode>(Entity(), format);
         }
 
         void TestGame::doWriteMap(WorldNode& world, const IO::Path& path) const {
@@ -172,17 +173,19 @@ namespace TrenchBroom {
         }
 
         std::vector<IO::Path> TestGame::doExtractTextureCollections(const AttributableNode& node) const {
-            const auto& pathsValue = node.attribute("wad");
-            if (pathsValue.empty()) {
-                return std::vector<IO::Path>(0);
+            if (const auto* pathsValue = node.entity().attribute("wad")) {
+                return IO::Path::asPaths(kdl::str_split(*pathsValue, ";"));
+            } else {
+                return {};
             }
-
-            return IO::Path::asPaths(kdl::str_split(pathsValue, ";"));
         }
 
         void TestGame::doUpdateTextureCollections(AttributableNode& node, const std::vector<IO::Path>& paths) const {
             const std::string value = kdl::str_join(IO::Path::asStrings(paths, "/"), ";");
-            node.addOrUpdateAttribute("wad", value);
+            
+            auto entity = node.entity();
+            entity.addOrUpdateAttribute("wad", value);
+            node.setEntity(std::move(entity));
         }
 
         void TestGame::doReloadShaders() {}
@@ -227,6 +230,10 @@ namespace TrenchBroom {
 
         const Model::BrushFaceAttributes& TestGame::doDefaultFaceAttribs() const {
             return m_defaultFaceAttributes;
+        }
+
+        const std::vector<CompilationTool>& TestGame::doCompilationTools() const {
+            return m_compilationTools;
         }
 
         std::vector<Assets::EntityDefinition*> TestGame::doLoadEntityDefinitions(IO::ParserStatus& /* status */, const IO::Path& /* path */) const {

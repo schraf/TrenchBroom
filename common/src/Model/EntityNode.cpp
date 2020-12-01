@@ -22,6 +22,7 @@
 #include "Assets/EntityDefinition.h"
 #include "Assets/EntityModel.h"
 #include "Model/BrushNode.h"
+#include "Model/EntityAttributesVariableStore.h"
 #include "Model/EntityRotationPolicy.h"
 #include "Model/EntitySnapshot.h"
 #include "Model/IssueGenerator.h"
@@ -52,58 +53,14 @@ namespace TrenchBroom {
 
         EntityNode::EntityNode() :
         AttributableNode(),
-        Object(),
-        m_boundsValid(false),
-        m_modelFrame(nullptr) {
-            cacheAttributes();
-        }
+        Object() {}
 
-        bool EntityNode::brushEntity() const {
-            return hasChildren();
-        }
+        EntityNode::EntityNode(Entity entity) :
+        AttributableNode(std::move(entity)),
+        Object() {}
 
-        bool EntityNode::pointEntity() const {
-            return !brushEntity();
-        }
-
-        bool EntityNode::hasEntityDefinition() const {
-            return m_definition != nullptr;
-        }
-
-        bool EntityNode::hasBrushEntityDefinition() const {
-            return hasEntityDefinition() && definition()->type() == Assets::EntityDefinitionType::BrushEntity;
-        }
-
-        bool EntityNode::hasPointEntityDefinition() const {
-            return hasEntityDefinition() && definition()->type() == Assets::EntityDefinitionType::PointEntity;
-        }
-
-        bool EntityNode::hasPointEntityModel() const {
-            return hasPointEntityDefinition() && m_modelFrame != nullptr;
-        }
-
-        const vm::bbox3& EntityNode::definitionBounds() const {
-            if (!m_boundsValid) {
-                validateBounds();
-            }
-            return m_definitionBounds;
-        }
-
-        const vm::vec3& EntityNode::origin() const {
-            return m_cachedOrigin;
-        }
-
-        const vm::mat4x4& EntityNode::rotation() const {
-            return m_cachedRotation;
-        }
-
-        const vm::mat4x4 EntityNode::modelTransformation() const {
-            return vm::translation_matrix(origin()) * rotation();
-        }
-
-        Assets::PitchType EntityNode::pitchType() const {
-            return (m_modelFrame != nullptr ? m_modelFrame->pitchType() : Assets::PitchType::Normal);
-        }
+        EntityNode::EntityNode(std::initializer_list<EntityAttribute> attributes) :
+        EntityNode(Entity(std::move(attributes))) {}
 
         FloatType EntityNode::area(vm::axis::type axis) const {
             const vm::vec3 size = physicalBounds().size();
@@ -119,69 +76,30 @@ namespace TrenchBroom {
             }
         }
 
-        void EntityNode::cacheAttributes() {
-            m_cachedOrigin = vm::parse<FloatType, 3>(attribute(AttributeNames::Origin, ""), vm::vec3::zero());
-            if (vm::is_nan(m_cachedOrigin)) {
-                m_cachedOrigin = vm::vec3::zero();
-            }
-            m_cachedRotation = EntityRotationPolicy::getRotation(this);
-        }
-
-        void EntityNode::setOrigin(const vm::vec3& origin) {
-            addOrUpdateAttribute(AttributeNames::Origin, kdl::str_to_string(vm::correct(origin)));
-        }
-
-        void EntityNode::applyRotation(const vm::mat4x4& transformation) {
-            EntityRotationPolicy::applyRotation(this, transformation);
-        }
-
-        Assets::ModelSpecification EntityNode::modelSpecification() const {
-            if (!hasPointEntityDefinition()) {
-                return Assets::ModelSpecification();
-            } else {
-                auto* pointDefinition = static_cast<Assets::PointEntityDefinition*>(m_definition);
-                return pointDefinition->model(m_attributes);
-            }
-        }
-
         const vm::bbox3& EntityNode::modelBounds() const {
-            if (!m_boundsValid) {
-                validateBounds();
-            }
-            return m_modelBounds;
-        }
-
-        const Assets::EntityModelFrame* EntityNode::modelFrame() const {
-            return m_modelFrame;
+            validateBounds();
+            return m_cachedBounds->modelBounds;
         }
 
         void EntityNode::setModelFrame(const Assets::EntityModelFrame* modelFrame) {
             const auto oldBounds = physicalBounds();
-            m_modelFrame = modelFrame;
+            m_entity.setModel(modelFrame);
             nodePhysicalBoundsDidChange(oldBounds);
-            cacheAttributes();
         }
 
         const vm::bbox3& EntityNode::doGetLogicalBounds() const {
-            if (!m_boundsValid) {
-                validateBounds();
-            }
-            return m_logicalBounds;
+            validateBounds();
+            return m_cachedBounds->logicalBounds;
         }
 
         const vm::bbox3& EntityNode::doGetPhysicalBounds() const {
-            if (!m_boundsValid) {
-                validateBounds();
-            }
-            return m_physicalBounds;
+            validateBounds();
+            return m_cachedBounds->physicalBounds;
         }
 
         Node* EntityNode::doClone(const vm::bbox3& /* worldBounds */) const {
-            auto* entity = new EntityNode();
+            auto* entity = new EntityNode(m_entity);
             cloneAttributes(entity);
-            entity->setDefinition(definition());
-            entity->setAttributes(attributes());
-            entity->setModelFrame(m_modelFrame);
             return entity;
         }
 
@@ -212,10 +130,12 @@ namespace TrenchBroom {
         }
 
         void EntityNode::doChildWasAdded(Node* /* node */) {
+            m_entity.setPointEntity(!hasChildren());
             nodePhysicalBoundsDidChange(physicalBounds());
         }
 
         void EntityNode::doChildWasRemoved(Node* /* node */) {
+            m_entity.setPointEntity(hasChildren());
             nodePhysicalBoundsDidChange(physicalBounds());
         }
 
@@ -237,7 +157,7 @@ namespace TrenchBroom {
 
         void EntityNode::doPick(const vm::ray3& ray, PickResult& pickResult) {
             if (!hasChildren()) {
-                const vm::bbox3& myBounds = definitionBounds();
+                const vm::bbox3& myBounds = logicalBounds();
                 if (!myBounds.contains(ray.origin)) {
                     const FloatType distance = vm::intersect_ray_bbox(ray, myBounds);
                     if (!vm::is_nan(distance)) {
@@ -248,13 +168,13 @@ namespace TrenchBroom {
                 }
 
                 // only if the bbox hit test failed do we hit test the model
-                if (m_modelFrame != nullptr) {
+                if (m_entity.model() != nullptr) {
                     // we transform the ray into the model's space
-                    const auto transform = modelTransformation();
+                    const auto transform = m_entity.modelTransformation();
                     const auto [invertible, inverse] = vm::invert(transform);
                     if (invertible) {
                         const auto transformedRay = vm::ray3f(ray.transform(inverse));
-                        const auto distance = m_modelFrame->intersect(transformedRay);
+                        const auto distance = m_entity.model()->intersect(transformedRay);
                         if (!vm::is_nan(distance)) {
                             // transform back to world space
                             const auto transformedHitPoint = vm::vec3(point_at_distance(transformedRay, distance));
@@ -299,22 +219,7 @@ namespace TrenchBroom {
         }
 
         void EntityNode::doAttributesDidChange(const vm::bbox3& oldBounds) {
-            // update m_cachedOrigin and m_cachedRotation. Must be done first because nodePhysicalBoundsDidChange() might
-            // call origin()
-            cacheAttributes();
-
             nodePhysicalBoundsDidChange(oldBounds);
-
-            // needs to be called again because the calculated rotation will be different after calling nodePhysicalBoundsDidChange()
-            cacheAttributes();
-        }
-
-        bool EntityNode::doIsAttributeNameMutable(const std::string& /* name */) const {
-            return true;
-        }
-
-        bool EntityNode::doIsAttributeValueMutable(const std::string& /* name */) const {
-            return true;
         }
 
         vm::vec3 EntityNode::doGetLinkSourceAnchor() const {
@@ -356,18 +261,9 @@ namespace TrenchBroom {
                     }
                 }
             } else {
-                // node change is called by setOrigin already
-                const auto center = logicalBounds().center();
-                const auto offset = center - origin();
-                const auto transformedCenter = transformation * center;
-                setOrigin(transformedCenter - offset);
-
-                // applying rotation has side effects (e.g. normalizing "angles")
-                // so only do it if there is actually some rotation.
-                const auto rotation = vm::strip_translation(transformation);
-                if (rotation != vm::mat4x4::identity()) {
-                    applyRotation(rotation);
-                }
+                auto entity = m_entity;
+                entity.transform(transformation);
+                setEntity(std::move(entity));
             }
 
             return kdl::result<void, TransformError>::success();
@@ -382,36 +278,37 @@ namespace TrenchBroom {
         }
 
         void EntityNode::invalidateBounds() {
-            m_boundsValid = false;
+            m_cachedBounds = std::nullopt;
         }
 
         void EntityNode::validateBounds() const {
-            if (hasPointEntityDefinition()) {
-                const Assets::EntityDefinition* def = definition();
-                m_definitionBounds = static_cast<const Assets::PointEntityDefinition*>(def)->bounds();
-                m_definitionBounds = m_definitionBounds.translate(origin());
-            } else {
-                m_definitionBounds = DefaultBounds.translate(origin());
+            if (m_cachedBounds.has_value()) {
+                return;
             }
-            if (hasPointEntityModel()) {
-                m_modelBounds = vm::bbox3(m_modelFrame->bounds()).transform(modelTransformation());
+
+            m_cachedBounds = CachedBounds{};
+
+            const bool hasModel = m_entity.model() != nullptr;
+            if (hasModel) {
+                m_cachedBounds->modelBounds = vm::bbox3(m_entity.model()->bounds()).transform(m_entity.modelTransformation());
             } else {
-                m_modelBounds = DefaultBounds.transform(modelTransformation());
+                m_cachedBounds->modelBounds = DefaultBounds.transform(m_entity.modelTransformation());
             }
 
             if (hasChildren()) {
-                m_logicalBounds = computeLogicalBounds(children(), vm::bbox3(0.0));
-                m_physicalBounds = computePhysicalBounds(children(), vm::bbox3(0.0));
+                m_cachedBounds->logicalBounds = computeLogicalBounds(children(), vm::bbox3(0.0));
+                m_cachedBounds->physicalBounds = computePhysicalBounds(children(), vm::bbox3(0.0));
             } else {
-                m_logicalBounds = m_definitionBounds;
-                if (hasPointEntityModel()) {
-                    m_physicalBounds = vm::merge(m_definitionBounds, m_modelBounds);
+                const auto* definition = dynamic_cast<const Assets::PointEntityDefinition*>(m_entity.definition());
+                const auto definitionBounds = definition ? definition->bounds() : DefaultBounds;
+
+                m_cachedBounds->logicalBounds = definitionBounds.translate(m_entity.origin());
+                if (hasModel) {
+                    m_cachedBounds->physicalBounds = vm::merge(m_cachedBounds->logicalBounds, m_cachedBounds->modelBounds);
                 } else {
-                    m_physicalBounds = m_definitionBounds;
+                    m_cachedBounds->physicalBounds = m_cachedBounds->logicalBounds;
                 }
             }
-
-            m_boundsValid = true;
         }
 
         void EntityNode::doAcceptTagVisitor(TagVisitor& visitor) {

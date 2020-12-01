@@ -26,6 +26,7 @@
 #include "IO/ResourceUtils.h"
 #include "Model/AttributableNode.h"
 #include "Model/AttributableNodeIndex.h"
+#include "Model/Entity.h"
 #include "Model/EntityAttributes.h"
 #include "Model/WorldNode.h"
 #include "View/MapDocument.h"
@@ -38,9 +39,10 @@
 #include <kdl/vector_utils.h>
 #include <kdl/vector_set.h>
 
+#include <cassert>
 #include <iterator>
-#include <optional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -56,6 +58,46 @@
 
 namespace TrenchBroom {
     namespace View {
+        // helper functions
+        bool isAttributeNameMutable(const Model::Entity& entity, const std::string& name) {
+            assert(!Model::isGroup(entity.classname(), entity.attributes()));
+            assert(!Model::isLayer(entity.classname(), entity.attributes()));
+
+            if (Model::isWorldspawn(entity.classname(), entity.attributes())) {
+                return !(name == Model::AttributeNames::Classname
+                    || name == Model::AttributeNames::Mods
+                    || name == Model::AttributeNames::EntityDefinitions
+                    || name == Model::AttributeNames::Wad
+                    || name == Model::AttributeNames::Textures
+                    || name == Model::AttributeNames::SoftMapBounds
+                    || name == Model::AttributeNames::LayerColor
+                    || name == Model::AttributeNames::LayerLocked
+                    || name == Model::AttributeNames::LayerHidden
+                    || name == Model::AttributeNames::LayerOmitFromExport);
+            }
+
+            return true;
+        }
+
+        bool isAttributeValueMutable(const Model::Entity& entity, const std::string& name) {
+            assert(!Model::isGroup(entity.classname(), entity.attributes()));
+            assert(!Model::isLayer(entity.classname(), entity.attributes()));
+
+            if (Model::isWorldspawn(entity.classname(), entity.attributes())) {
+                return !(name == Model::AttributeNames::Mods
+                    || name == Model::AttributeNames::EntityDefinitions
+                    || name == Model::AttributeNames::Wad
+                    || name == Model::AttributeNames::Textures
+                    || name == Model::AttributeNames::SoftMapBounds
+                    || name == Model::AttributeNames::LayerColor
+                    || name == Model::AttributeNames::LayerLocked
+                    || name == Model::AttributeNames::LayerHidden
+                    || name == Model::AttributeNames::LayerOmitFromExport);
+            }
+
+            return true;
+        }
+
         // AttributeRow
 
         AttributeRow::AttributeRow() :
@@ -96,10 +138,10 @@ namespace TrenchBroom {
 
         AttributeRow::AttributeRow(const std::string& name, const Model::AttributableNode* node) :
         m_name(name) {
-            const Assets::AttributeDefinition* definition = node->attributeDefinition(name);
+            const Assets::AttributeDefinition* definition = Model::attributeDefinition(node, name);
 
-            if (node->hasAttribute(name)) {
-                m_value = node->attribute(name);
+            if (const auto* value = node->entity().attribute(name)) {
+                m_value = *value;
                 m_valueType = ValueType::SingleValue;
             } else if (definition != nullptr) {
                 m_value = Assets::AttributeDefinition::defaultValue(*definition);
@@ -109,8 +151,8 @@ namespace TrenchBroom {
                 m_valueType = ValueType::Unset;
             }
 
-            m_nameMutable = node->isAttributeNameMutable(name);
-            m_valueMutable = node->isAttributeValueMutable(name);
+            m_nameMutable = isAttributeNameMutable(node->entity(), name);
+            m_valueMutable = isAttributeValueMutable(node->entity(), name);
             m_tooltip = (definition != nullptr ? definition->shortDescription() : "");
             if (m_tooltip.empty()) {
                 m_tooltip = "No description found";
@@ -118,29 +160,28 @@ namespace TrenchBroom {
         }
 
         void AttributeRow::merge(const Model::AttributableNode* other) {
-            const bool otherHasAttribute = other->hasAttribute(m_name);
-            const std::string otherValue = other->attribute(m_name);
+            const auto* otherValue = other->entity().attribute(m_name);
 
             // State transitions
             if (m_valueType == ValueType::Unset) {
-                if (otherHasAttribute) {
+                if (otherValue) {
                      m_valueType = ValueType::SingleValueAndUnset;
-                     m_value = otherValue;
+                     m_value = *otherValue;
                 }
             } else if (m_valueType == ValueType::SingleValue) {
-                if (!otherHasAttribute) {
+                if (!otherValue) {
                     m_valueType = ValueType::SingleValueAndUnset;
-                } else if (otherValue != m_value) {
+                } else if (*otherValue != m_value) {
                     m_valueType = ValueType::MultipleValues;
                 }
             } else if (m_valueType == ValueType::SingleValueAndUnset) {
-                if (otherHasAttribute && otherValue != m_value) {
+                if (otherValue && *otherValue != m_value) {
                     m_valueType = ValueType::MultipleValues;
                 }
             }
 
-            m_nameMutable = (m_nameMutable && other->isAttributeNameMutable(m_name));
-            m_valueMutable = (m_valueMutable && other->isAttributeValueMutable(m_name));
+            m_nameMutable = (m_nameMutable && isAttributeNameMutable(other->entity(), m_name));
+            m_valueMutable = (m_valueMutable && isAttributeValueMutable(other->entity(), m_name));
         }
 
         const std::string& AttributeRow::name() const {
@@ -208,13 +249,13 @@ namespace TrenchBroom {
                 }
 
                 // Add explicitly set attributes
-                for (const Model::EntityAttribute& attribute : node->attributes()) {
+                for (const Model::EntityAttribute& attribute : node->entity().attributes()) {
                     result.insert(attribute.name());
                 }
 
                 // Add default attributes from the entity definition
                 if (showDefaultRows) {
-                    const Assets::EntityDefinition* entityDefinition = node->definition();
+                    const Assets::EntityDefinition* entityDefinition = node->entity().definition();
                     if (entityDefinition != nullptr) {
                        for (auto attributeDefinition : entityDefinition->attributeDefinitions()) {
                            result.insert(attributeDefinition->name());
@@ -740,9 +781,9 @@ namespace TrenchBroom {
             bool hasChange = false;
             const std::string name = m_rows.at(rowIndex).name();
             for (const Model::AttributableNode* attributable : attributables) {
-                if (attributable->hasAttribute(name)) {
-                    ensure(attributable->canAddOrUpdateAttribute(name, newValue), "tried to modify immutable attribute value"); // this should be guaranteed by the AttributeRow constructor
-                    if (attributable->attribute(name) != newValue) {
+                if (const auto* oldValue = attributable->entity().attribute(name)) {
+                    ensure(isAttributeValueMutable(attributable->entity(), name), "tried to modify immutable attribute value"); // this should be guaranteed by the AttributeRow constructor
+                    if (*oldValue != newValue) {
                         hasChange = true;
                     }
                 } else {

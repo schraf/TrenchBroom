@@ -19,6 +19,7 @@
 
 #include "Color.h"
 #include "Assets/EntityDefinition.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/WorldNode.h"
 #include "View/MapDocumentTest.h"
@@ -47,21 +48,22 @@ namespace TrenchBroom {
             Assets::PointEntityDefinition* largeEntityDef = new Assets::PointEntityDefinition("large_entity", Color(), vm::bbox3(64.0), "this is a point entity", {}, {});
             document->setEntityDefinitions(std::vector<Assets::EntityDefinition*>{ m_pointEntityDef, largeEntityDef });
 
-            Model::EntityNode* entityNode = new Model::EntityNode();
-            entityNode->addOrUpdateAttribute("classname", "large_entity");
+            Model::EntityNode* entityNode = new Model::EntityNode({
+                {"classname", "large_entity"}
+            });
             
             document->addNode(entityNode, document->parentForNodes());
-            REQUIRE(entityNode->definition() == largeEntityDef);
+            REQUIRE(entityNode->entity().definition() == largeEntityDef);
             
             document->select(entityNode);
             REQUIRE(document->selectionBounds().size() == largeEntityDef->bounds().size());
             
             document->setAttribute("classname", "point_entity");
-            CHECK(entityNode->definition() == m_pointEntityDef);
+            CHECK(entityNode->entity().definition() == m_pointEntityDef);
             CHECK(document->selectionBounds().size() == m_pointEntityDef->bounds().size());
             
             document->removeAttribute("classname");
-            CHECK(entityNode->definition() == nullptr);
+            CHECK(entityNode->entity().definition() == nullptr);
             CHECK(document->selectionBounds().size() == Model::EntityNode::DefaultBounds.size());
             
             document->setAttribute("temp", "large_entity");
@@ -69,7 +71,7 @@ namespace TrenchBroom {
             CHECK(document->selectionBounds().size() == largeEntityDef->bounds().size());
             
             document->undoCommand();
-            CHECK(entityNode->definition() == nullptr);
+            CHECK(entityNode->entity().definition() == nullptr);
             CHECK(document->selectionBounds().size() == Model::EntityNode::DefaultBounds.size());
         }
     }

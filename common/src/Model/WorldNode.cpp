@@ -44,14 +44,16 @@
 
 namespace TrenchBroom {
     namespace Model {
-        WorldNode::WorldNode(MapFormat mapFormat) :
+        WorldNode::WorldNode(Entity entity, MapFormat mapFormat) :
         m_factory(std::make_unique<ModelFactoryImpl>(mapFormat)),
         m_defaultLayer(nullptr),
         m_attributableIndex(std::make_unique<AttributableNodeIndex>()),
         m_issueGeneratorRegistry(std::make_unique<IssueGeneratorRegistry>()),
         m_nodeTree(std::make_unique<NodeTree>()),
         m_updateNodeTree(true) {
-            addOrUpdateAttribute(AttributeNames::Classname, AttributeValues::WorldspawnClassname);
+            entity.addOrUpdateAttribute(AttributeNames::Classname, AttributeValues::WorldspawnClassname);
+            entity.setPointEntity(false);
+            setEntity(std::move(entity));
             createDefaultLayer();
         }
 
@@ -70,8 +72,11 @@ namespace TrenchBroom {
         std::vector<LayerNode*> WorldNode::allLayers() {
             std::vector<LayerNode*> layers;
             visitChildren(kdl::overload(
+                [ ](WorldNode*) {},
                 [&](LayerNode* layer) { layers.push_back(layer); },
-                [](auto*) {}
+                [ ](GroupNode*) {},
+                [ ](EntityNode*) {},
+                [ ](BrushNode*) {}
             ));
             return layers;
         }
@@ -86,8 +91,11 @@ namespace TrenchBroom {
             const std::vector<Node*>& children = Node::children();
             for (auto it = std::next(std::begin(children)), end = std::end(children); it != end; ++it) {
                 (*it)->accept(kdl::overload(
+                    [] (WorldNode*)       {},
                     [&](LayerNode* layer) { layers.push_back(layer); },
-                    [](auto*) {}
+                    [] (GroupNode*)       {},
+                    [] (EntityNode*)      {},
+                    [] (BrushNode*)       {}
                 ));
             }
 
@@ -156,12 +164,19 @@ namespace TrenchBroom {
 
         void WorldNode::rebuildNodeTree() {
             auto nodes = std::vector<Model::Node*>{};
-            accept([&](auto&& thisLambda, auto* node) { 
-                if (node->shouldAddToSpacialIndex()) { 
-                    nodes.push_back(node); 
+            const auto addNode = [&](auto* node) {
+                if (node->shouldAddToSpacialIndex()) {
+                    nodes.push_back(node);
                 }
-                node->visitChildren(thisLambda);
-            });
+            };
+
+            accept(kdl::overload(
+                [&](auto&& thisLambda, WorldNode* world)   { addNode(world); world->visitChildren(thisLambda); },
+                [&](auto&& thisLambda, LayerNode* layer)   { addNode(layer); layer->visitChildren(thisLambda); },
+                [&](auto&& thisLambda, GroupNode* group)   { addNode(group); group->visitChildren(thisLambda); },
+                [&](auto&& thisLambda, EntityNode* entity) { addNode(entity); entity->visitChildren(thisLambda); },
+                [&](BrushNode* brush)                      { addNode(brush); }
+            ));
 
             m_nodeTree->clearAndBuild(nodes, [](const auto* node){ return node->physicalBounds(); });
         }
@@ -184,7 +199,7 @@ namespace TrenchBroom {
         }
 
         Node* WorldNode::doClone(const vm::bbox3& /* worldBounds */) const {
-            WorldNode* world = m_factory->createWorld();
+            WorldNode* world = m_factory->createWorld(Entity());
             cloneAttributes(world);
             return world;
         }
@@ -193,7 +208,7 @@ namespace TrenchBroom {
             const std::vector<Node*>& myChildren = children();
             assert(myChildren[0] == m_defaultLayer);
 
-            WorldNode* world = m_factory->createWorld();
+            WorldNode* world = m_factory->createWorld(Entity());
             cloneAttributes(world);
 
             world->defaultLayer()->addChildren(cloneRecursively(worldBounds, m_defaultLayer->children()));
@@ -331,31 +346,6 @@ namespace TrenchBroom {
 
         void WorldNode::doAttributesDidChange(const vm::bbox3& /* oldBounds */) {}
 
-        bool WorldNode::doIsAttributeNameMutable(const std::string& name) const {
-            return !(name == AttributeNames::Classname
-                || name == AttributeNames::Mods
-                || name == AttributeNames::EntityDefinitions
-                || name == AttributeNames::Wad
-                || name == AttributeNames::Textures
-                || name == AttributeNames::SoftMapBounds
-                || name == AttributeNames::LayerColor
-                || name == AttributeNames::LayerLocked
-                || name == AttributeNames::LayerHidden
-                || name == AttributeNames::LayerOmitFromExport);
-        }
-
-        bool WorldNode::doIsAttributeValueMutable(const std::string& name) const {
-            return !(name == AttributeNames::Mods
-                || name == AttributeNames::EntityDefinitions
-                || name == AttributeNames::Wad
-                || name == AttributeNames::Textures
-                || name == AttributeNames::SoftMapBounds
-                || name == AttributeNames::LayerColor
-                || name == AttributeNames::LayerLocked
-                || name == AttributeNames::LayerHidden
-                || name == AttributeNames::LayerOmitFromExport);
-        }
-
         vm::vec3 WorldNode::doGetLinkSourceAnchor() const {
             return vm::vec3::zero();
         }
@@ -368,8 +358,8 @@ namespace TrenchBroom {
             return m_factory->format();
         }
 
-        WorldNode* WorldNode::doCreateWorld() const {
-            return m_factory->createWorld();
+        WorldNode* WorldNode::doCreateWorld(Entity entity) const {
+            return m_factory->createWorld(std::move(entity));
         }
 
         LayerNode* WorldNode::doCreateLayer(const std::string& name) const {
@@ -380,8 +370,8 @@ namespace TrenchBroom {
             return m_factory->createGroup(name);
         }
 
-        EntityNode* WorldNode::doCreateEntity() const {
-            return m_factory->createEntity();
+        EntityNode* WorldNode::doCreateEntity(Entity entity) const {
+            return m_factory->createEntity(std::move(entity));
         }
 
         kdl::result<BrushFace, BrushError> WorldNode::doCreateFace(const vm::vec3& point1, const vm::vec3& point2, const vm::vec3& point3, const BrushFaceAttributes& attribs) const {

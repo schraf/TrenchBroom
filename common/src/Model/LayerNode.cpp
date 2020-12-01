@@ -45,7 +45,9 @@ namespace TrenchBroom {
         }
 
         void LayerNode::setName(const std::string& name) {
-            addOrUpdateAttribute(AttributeNames::LayerName, name);
+            auto entity = m_entity;
+            entity.addOrUpdateAttribute(AttributeNames::LayerName, name);
+            setEntity(std::move(entity));
         }
 
         bool LayerNode::isDefaultLayer() const {
@@ -71,43 +73,49 @@ namespace TrenchBroom {
                 return defaultLayerSortIndex();
             }
 
-            const std::string& indexString = attribute(AttributeNames::LayerSortIndex);
-            if (indexString.empty()) {
+            if (const auto* indexString = entity().attribute(AttributeNames::LayerSortIndex)) {
+                return kdl::str_to_int(*indexString).value_or(invalidSortIndex());
+            } else {
                 return invalidSortIndex();
             }
-
-            return kdl::str_to_int(indexString).value_or(invalidSortIndex());
         }
 
         std::optional<Color> LayerNode::layerColor() const {
-            const std::string& string = attribute(AttributeNames::LayerColor);
-            if (string.empty() || !Color::canParse(string)) {
+            if (const auto* string = entity().attribute(AttributeNames::LayerColor); string && Color::canParse(*string)) {
+                return { Color::parse(*string) };
+            } else {
                 return std::nullopt;
             }
-            return { Color::parse(string) };
         }
 
         void LayerNode::setLayerColor(const Color& color) {
-            addOrUpdateAttribute(AttributeNames::LayerColor, color.toString());
+            auto entity = m_entity;
+            entity.addOrUpdateAttribute(AttributeNames::LayerColor, color.toString());
+            setEntity(std::move(entity));
         }
 
         bool LayerNode::omitFromExport() const {
-            return hasAttribute(AttributeNames::LayerOmitFromExport, AttributeValues::LayerOmitFromExportValue);
+            return entity().hasAttribute(AttributeNames::LayerOmitFromExport, AttributeValues::LayerOmitFromExportValue);
         }
 
         void LayerNode::setOmitFromExport(const bool omitFromExport) {
+            auto entity = m_entity;
             if (omitFromExport) {
-                addOrUpdateAttribute(AttributeNames::LayerOmitFromExport, AttributeValues::LayerOmitFromExportValue);
+                entity.addOrUpdateAttribute(AttributeNames::LayerOmitFromExport, AttributeValues::LayerOmitFromExportValue);
             } else {
-                removeAttribute(AttributeNames::LayerOmitFromExport);
+                entity.removeAttribute(AttributeNames::LayerOmitFromExport);
             }
+            setEntity(std::move(entity));
         }
 
         void LayerNode::setSortIndex(int index) {
             if (isDefaultLayer()) {
                 return;
             }
-            addOrUpdateAttribute(AttributeNames::LayerSortIndex, std::to_string(index));
+            
+            auto entity = m_entity;
+            entity.addOrUpdateAttribute(AttributeNames::LayerSortIndex, std::to_string(index));
+            setEntity(std::move(entity));
         }
 
         void LayerNode::sortLayers(std::vector<LayerNode*>& layers)  {
@@ -117,7 +125,9 @@ namespace TrenchBroom {
         }
 
         const std::string& LayerNode::doGetName() const {
-            return attribute(AttributeNames::LayerName);
+            static const auto NoName = std::string("");
+            const auto* value = entity().attribute(AttributeNames::LayerName);
+            return value ? *value : NoName;
         }
 
         const vm::bbox3& LayerNode::doGetLogicalBounds() const {
@@ -191,14 +201,6 @@ namespace TrenchBroom {
         }
 
         void LayerNode::doAttributesDidChange(const vm::bbox3& /* oldBounds */) {
-        }
-
-        bool LayerNode::doIsAttributeNameMutable(const std::string& /* name */) const {
-            return false;
-        }
-
-        bool LayerNode::doIsAttributeValueMutable(const std::string& /* name */) const {
-            return false;
         }
 
         vm::vec3 LayerNode::doGetLinkSourceAnchor() const {

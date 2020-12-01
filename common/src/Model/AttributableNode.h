@@ -20,12 +20,12 @@
 #ifndef TrenchBroom_AttributableNode
 #define TrenchBroom_AttributableNode
 
+#include "Model/Entity.h"
 #include "Model/EntityAttributes.h"
 #include "Model/Node.h"
 
 #include <vecmath/bbox.h>
 
-#include <set>
 #include <string>
 #include <vector>
 
@@ -36,63 +36,30 @@ namespace TrenchBroom {
     }
 
     namespace Model {
-        class AttributableNode : public Node {
-        public: // some helper methods
-            static Assets::EntityDefinition* selectEntityDefinition(const std::vector<AttributableNode*>& attributables);
-            static const Assets::AttributeDefinition* selectAttributeDefinition(const std::string& name, const std::vector<AttributableNode*>& attributables);
-            static std::string selectAttributeValue(const std::string& name, const std::vector<AttributableNode*>& attributables);
-        protected:
-            static const std::string DefaultAttributeValue;
+        const Assets::EntityDefinition* selectEntityDefinition(const std::vector<AttributableNode*>& attributables);
+        const Assets::AttributeDefinition* attributeDefinition(const AttributableNode* node, const std::string& name);
+        const Assets::AttributeDefinition* selectAttributeDefinition(const std::string& name, const std::vector<AttributableNode*>& attributables);
+        std::string selectAttributeValue(const std::string& name, const std::vector<AttributableNode*>& attributables);
 
-            Assets::EntityDefinition* m_definition;
-            EntityAttributes m_attributes;
+        class AttributableNode : public Node {
+        protected:
+            AttributableNode(Entity entity);
+
+            Entity m_entity;
 
             std::vector<AttributableNode*> m_linkSources;
             std::vector<AttributableNode*> m_linkTargets;
             std::vector<AttributableNode*> m_killSources;
             std::vector<AttributableNode*> m_killTargets;
-
-            // cache the classname for faster access
-            std::string m_classname;
         public:
             virtual ~AttributableNode() override;
-        public: // definition
-            Assets::EntityDefinition* definition() const;
+        public: // entity access
+            const Entity& entity() const;
+            void setEntity(Entity entity);
+        public: // definition 
             void setDefinition(Assets::EntityDefinition* definition);
         public: // attribute management
-            const Assets::AttributeDefinition* attributeDefinition(const std::string& name) const;
-
-            const std::vector<EntityAttribute>& attributes() const;
-            void setAttributes(const std::vector<EntityAttribute>& attributes);
-
-            std::vector<std::string> attributeNames() const;
-
-            bool hasAttribute(const std::string& name) const;
-            bool hasAttribute(const std::string& name, const std::string& value) const;
-            bool hasAttributeWithPrefix(const std::string& prefix, const std::string& value) const;
-            bool hasNumberedAttribute(const std::string& prefix, const std::string& value) const;
-
-            std::vector<EntityAttribute> attributeWithName(const std::string& name) const;
-            std::vector<EntityAttribute> attributesWithPrefix(const std::string& prefix) const;
-            std::vector<EntityAttribute> numberedAttributes(const std::string& prefix) const;
-
-            const std::string& attribute(const std::string& name, const std::string& defaultValue = DefaultAttributeValue) const;
-            const std::string& classname(const std::string& defaultClassname = AttributeValues::NoClassname) const;
-
             EntityAttributeSnapshot attributeSnapshot(const std::string& name) const;
-
-            bool canAddOrUpdateAttribute(const std::string& name, const std::string& value) const;
-            bool addOrUpdateAttribute(const std::string& name, const std::string& value);
-
-            bool canRenameAttribute(const std::string& name, const std::string& newName) const;
-            void renameAttribute(const std::string& name, const std::string& newName);
-
-            bool canRemoveAttribute(const std::string& name) const;
-            void removeAttribute(const std::string& name);
-            void removeNumberedAttribute(const std::string& prefix);
-
-            bool isAttributeNameMutable(const std::string& name) const;
-            bool isAttributeValueMutable(const std::string& name) const;
         private: // attribute management internals
             class NotifyAttributeChange {
             private:
@@ -106,12 +73,13 @@ namespace TrenchBroom {
 
             void attributesWillChange();
             void attributesDidChange(const vm::bbox3& oldPhysicalBounds);
-
-            void updateClassname();
+        private: // bulk update after attribute changes
+            void updateIndexAndLinks(const std::vector<EntityAttribute>& newAttributes);
+            void updateAttributeIndex(const std::vector<EntityAttribute>& oldAttributes, const std::vector<EntityAttribute>& newAttributes);
+            void updateLinks(const std::vector<EntityAttribute>& oldAttributes, const std::vector<EntityAttribute>& newAttributes);
         private: // search index management
             void addAttributesToIndex();
             void removeAttributesFromIndex();
-            void updateAttributeIndex(const std::vector<EntityAttribute>& newAttributes);
 
             void addAttributeToIndex(const std::string& name, const std::string& value);
             void removeAttributeFromIndex(const std::string& name, const std::string& value);
@@ -130,6 +98,7 @@ namespace TrenchBroom {
             std::vector<std::string> findMissingKillTargets() const;
         private: // link management internals
             void findMissingTargets(const std::string& prefix, std::vector<std::string>& result) const;
+
 
             void addLinks(const std::string& name, const std::string& value);
             void removeLinks(const std::string& name, const std::string& value);
@@ -176,8 +145,6 @@ namespace TrenchBroom {
             virtual void doAncestorDidChange() override;
         private: // subclassing interface
             virtual void doAttributesDidChange(const vm::bbox3& oldBounds) = 0;
-            virtual bool doIsAttributeNameMutable(const std::string& name) const = 0;
-            virtual bool doIsAttributeValueMutable(const std::string& name) const = 0;
             virtual vm::vec3 doGetLinkSourceAnchor() const = 0;
             virtual vm::vec3 doGetLinkTargetAnchor() const = 0;
         private: // hide copy constructor and assignment operator

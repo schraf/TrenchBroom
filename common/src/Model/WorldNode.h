@@ -55,7 +55,7 @@ namespace TrenchBroom {
             std::unique_ptr<NodeTree> m_nodeTree;
             bool m_updateNodeTree;
         public:
-            WorldNode(MapFormat mapFormat);
+            WorldNode(Entity entity, MapFormat mapFormat);
             ~WorldNode() override;
         public: // layer management
             LayerNode* defaultLayer();
@@ -143,16 +143,14 @@ namespace TrenchBroom {
             void doRemoveFromIndex(AttributableNode* attributable, const std::string& name, const std::string& value) override;
         private: // implement AttributableNode interface
             void doAttributesDidChange(const vm::bbox3& oldBounds) override;
-            bool doIsAttributeNameMutable(const std::string& name) const override;
-            bool doIsAttributeValueMutable(const std::string& name) const override;
             vm::vec3 doGetLinkSourceAnchor() const override;
             vm::vec3 doGetLinkTargetAnchor() const override;
         private: // implement ModelFactory interface
             MapFormat doGetFormat() const override;
-            WorldNode* doCreateWorld() const override;
+            WorldNode* doCreateWorld(Entity entity) const override;
             LayerNode* doCreateLayer(const std::string& name) const override;
             GroupNode* doCreateGroup(const std::string& name) const override;
-            EntityNode* doCreateEntity() const override;
+            EntityNode* doCreateEntity(Entity entity) const override;
             kdl::result<BrushFace, BrushError> doCreateFace(const vm::vec3& point1, const vm::vec3& point2, const vm::vec3& point3, const BrushFaceAttributes& attribs) const override;
             kdl::result<BrushFace, BrushError> doCreateFaceFromStandard(const vm::vec3& point1, const vm::vec3& point2, const vm::vec3& point3, const BrushFaceAttributes& attribs) const override;
             kdl::result<BrushFace, BrushError> doCreateFaceFromValve(const vm::vec3& point1, const vm::vec3& point2, const vm::vec3& point3, const BrushFaceAttributes& attribs, const vm::vec3& texAxisX, const vm::vec3& texAxisY) const override;

@@ -21,6 +21,7 @@
 
 #include "IO/ParserStatus.h"
 #include "Model/BrushNode.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/EntityAttributes.h"
 #include "Model/LayerNode.h"
@@ -93,8 +94,8 @@ namespace TrenchBroom {
         }
 
         Model::Node* NodeReader::onWorldspawn(const std::vector<Model::EntityAttribute>& attributes, const ExtraAttributes& extraAttributes, ParserStatus& /* status */) {
-            Model::EntityNode* worldspawn = m_factory.createEntity();
-            worldspawn->setAttributes(attributes);
+            Model::EntityNode* worldspawn = m_factory.createEntity(Model::Entity());
+            worldspawn->setEntity(Model::Entity(attributes));
             setExtraAttributes(worldspawn, extraAttributes);
 
             m_nodes.insert(std::begin(m_nodes), worldspawn);

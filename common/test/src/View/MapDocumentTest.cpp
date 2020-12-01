@@ -27,6 +27,7 @@
 #include "Model/BrushNode.h"
 #include "Model/EmptyAttributeNameIssueGenerator.h"
 #include "Model/EmptyAttributeValueIssueGenerator.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/GroupNode.h"
 #include "Model/HitAdapter.h"
@@ -569,6 +570,16 @@ namespace TrenchBroom {
             ASSERT_EQ(inner, innerEnt1->parent());
             ASSERT_EQ(inner, innerEnt2->parent());
 
+            CHECK(document->currentGroup() == nullptr);
+            CHECK(!outer->opened());
+            CHECK(!inner->opened());
+
+            CHECK(Model::findOutermostClosedGroup(innerEnt1) == outer);
+            CHECK(Model::findOutermostClosedGroup(outerEnt1) == outer);
+
+            CHECK(Model::findContainingGroup(innerEnt1) == inner);
+            CHECK(Model::findContainingGroup(outerEnt1) == outer);
+
             // open the outer group and ungroup the inner group
             document->openGroup(outer);
             document->select(inner);
@@ -680,7 +691,7 @@ namespace TrenchBroom {
             Model::EntityNode* ent1 = new Model::EntityNode();
             document->addNode(ent1, document->parentForNodes());
 
-            const auto origin = ent1->origin();
+            const auto origin = ent1->entity().origin();
             const auto bounds = ent1->logicalBounds();
 
             const auto rayOrigin = origin + vm::vec3(-32.0, bounds.size().y() / 2.0, bounds.size().z() / 2.0);
@@ -990,6 +1001,38 @@ namespace TrenchBroom {
             EXPECT_EQ(nullptr, brush2->parent());
         }
 
+        TEST_CASE_METHOD(MapDocumentTest, "MapDocumentTest.selectTall") {
+            using Catch::Matchers::UnorderedEquals;
+
+            Model::BrushBuilder builder(document->world(), document->worldBounds());
+            Model::BrushNode* brush1 = document->world()->createBrush(builder.createCube(64.0, "none").value());
+            Model::BrushNode* brush2 = document->world()->createBrush(builder.createCube(64.0, "none").value());
+            Model::BrushNode* brush3 = document->world()->createBrush(builder.createCube(64.0, "none").value());
+
+            REQUIRE(brush2->transform(document->worldBounds(), vm::translation_matrix(vm::vec3(0.0, 0.0, -500.0)), false));
+            REQUIRE(brush3->transform(document->worldBounds(), vm::translation_matrix(vm::vec3(100.0, 0.0, 0.0)), false));
+
+            document->addNode(brush1, document->parentForNodes());
+            document->addNode(brush2, document->parentForNodes());
+            document->addNode(brush3, document->parentForNodes());
+
+            REQUIRE(!brush1->intersects(brush2));
+            REQUIRE(!brush1->intersects(brush3));
+
+            document->select(brush1);
+
+            SECTION("z camera") {
+                document->selectTall(vm::axis::z);
+
+                CHECK_THAT(document->selectedNodes().brushes(), UnorderedEquals(std::vector<Model::BrushNode*>{brush2}));
+            }
+            SECTION("x camera") {
+                document->selectTall(vm::axis::x);
+
+                CHECK_THAT(document->selectedNodes().brushes(), UnorderedEquals(std::vector<Model::BrushNode*>{brush3}));
+            }
+        }
+
         TEST_CASE_METHOD(MapDocumentTest, "MapDocumentTest.selectInverse") {
             // delete default brush
             document->selectAllNodes();
@@ -1111,9 +1154,12 @@ namespace TrenchBroom {
         }
 
         TEST_CASE_METHOD(MapDocumentTest, "IssueGenerator.emptyAttribute") {
-            Model::EntityNode* entity = document->createPointEntity(m_pointEntityDef, vm::vec3::zero());
-            entity->addOrUpdateAttribute("", "");
-            CHECK(entity->hasAttribute(""));
+            Model::EntityNode* entityNode = document->createPointEntity(m_pointEntityDef, vm::vec3::zero());
+            
+            document->deselectAll();
+            document->select(entityNode);
+            document->setAttribute("", "");
+            REQUIRE(entityNode->entity().hasAttribute(""));
 
             auto issueGenerators = std::vector<Model::IssueGenerator*>{
                 new Model::EmptyAttributeNameIssueGenerator(),
@@ -1152,7 +1198,7 @@ namespace TrenchBroom {
             quickFix->apply(document.get(), std::vector<Model::Issue*>{issue0});
 
             // The fix should have deleted the attribute
-            CHECK(!entity->hasAttribute(""));
+            CHECK(!entityNode->entity().hasAttribute(""));
 
             kdl::vec_clear_and_delete(issueGenerators);
         }

@@ -31,13 +31,13 @@
 
 namespace TrenchBroom {
     namespace Model {
-        Assets::EntityDefinition* AttributableNode::selectEntityDefinition(const std::vector<AttributableNode*>& attributables) {
-            Assets::EntityDefinition* definition = nullptr;
+        const Assets::EntityDefinition* selectEntityDefinition(const std::vector<AttributableNode*>& attributables) {
+            const Assets::EntityDefinition* definition = nullptr;
 
             for (AttributableNode* attributable : attributables) {
                 if (definition == nullptr) {
-                    definition = attributable->definition();
-                } else if (definition != attributable->definition()) {
+                    definition = attributable->entity().definition();
+                } else if (definition != attributable->entity().definition()) {
                     definition = nullptr;
                     break;
                 }
@@ -46,20 +46,25 @@ namespace TrenchBroom {
             return definition;
         }
 
-        const Assets::AttributeDefinition* AttributableNode::selectAttributeDefinition(const std::string& name, const std::vector<AttributableNode*>& attributables) {
+        const Assets::AttributeDefinition* attributeDefinition(const AttributableNode* node, const std::string& name) {
+            const auto* definition = node->entity().definition();
+            return definition ? definition->attributeDefinition(name) : nullptr;
+        }
+
+        const Assets::AttributeDefinition* selectAttributeDefinition(const std::string& name, const std::vector<AttributableNode*>& attributables) {
             std::vector<AttributableNode*>::const_iterator it = std::begin(attributables);
             std::vector<AttributableNode*>::const_iterator end = std::end(attributables);
             if (it == end)
                 return nullptr;
 
             const AttributableNode* attributable = *it;
-            const Assets::AttributeDefinition* definition = attributable->attributeDefinition(name);
+            const Assets::AttributeDefinition* definition = attributeDefinition(attributable, name);
             if (definition == nullptr)
                 return nullptr;
 
             while (++it != end) {
                 attributable = *it;
-                const Assets::AttributeDefinition* currentDefinition = attributable->attributeDefinition(name);
+                const Assets::AttributeDefinition* currentDefinition = attributeDefinition(attributable, name);
                 if (currentDefinition == nullptr)
                     return nullptr;
 
@@ -70,196 +75,56 @@ namespace TrenchBroom {
             return definition;
         }
 
-        std::string AttributableNode::selectAttributeValue(const std::string& name, const std::vector<AttributableNode*>& attributables) {
+        std::string selectAttributeValue(const std::string& name, const std::vector<AttributableNode*>& attributables) {
             std::vector<AttributableNode*>::const_iterator it = std::begin(attributables);
             std::vector<AttributableNode*>::const_iterator end = std::end(attributables);
             if (it == end)
                 return "";
 
             const AttributableNode* attributable = *it;
-            if (!attributable->hasAttribute(name))
+            const auto* value = attributable->entity().attribute(name);
+            if (!value)
                 return "";
 
-            const std::string& value = attributable->attribute(name);
             while (++it != end) {
                 attributable = *it;
-                if (!attributable->hasAttribute(name))
+                const auto* itValue = attributable->entity().attribute(name);
+                if (!itValue) {
                     return "";
-                if (value != attributable->attribute(name))
+                }
+                if (*value != *itValue)
                     return "";
             }
-            return value;
-        }
-
-        const std::string AttributableNode::DefaultAttributeValue("");
-
-        AttributableNode::~AttributableNode() {
-            m_definition = nullptr;
-        }
-
-        Assets::EntityDefinition* AttributableNode::definition() const {
-            return m_definition;
-        }
-
-        void AttributableNode::setDefinition(Assets::EntityDefinition* definition) {
-            if (m_definition == definition)
-                return;
-
-            const NotifyAttributeChange notifyChange(this);
-            if (m_definition != nullptr)
-                m_definition->decUsageCount();
-            m_definition = definition;
-            m_attributes.updateDefinitions(m_definition);
-            if (m_definition != nullptr)
-                m_definition->incUsageCount();
-        }
-
-        const Assets::AttributeDefinition* AttributableNode::attributeDefinition(const std::string& name) const {
-            return m_definition == nullptr ? nullptr : m_definition->attributeDefinition(name);
-        }
-
-        const std::vector<EntityAttribute>& AttributableNode::attributes() const {
-            return m_attributes.attributes();
-        }
-
-        void AttributableNode::setAttributes(const std::vector<EntityAttribute>& attributes) {
-            const NotifyAttributeChange notifyChange(this);
-            updateAttributeIndex(attributes);
-            m_attributes.setAttributes(attributes);
-            m_attributes.updateDefinitions(m_definition);
-        }
-
-        std::vector<std::string> AttributableNode::attributeNames() const {
-            return m_attributes.names();
-        }
-
-        bool AttributableNode::hasAttribute(const std::string& name) const {
-            return m_attributes.hasAttribute(name);
-        }
-
-        bool AttributableNode::hasAttribute(const std::string& name, const std::string& value) const {
-            return m_attributes.hasAttribute(name, value);
-        }
-
-        bool AttributableNode::hasAttributeWithPrefix(const std::string& prefix, const std::string& value) const {
-            return m_attributes.hasAttributeWithPrefix(prefix, value);
-        }
-
-        bool AttributableNode::hasNumberedAttribute(const std::string& prefix, const std::string& value) const {
-            return m_attributes.hasNumberedAttribute(prefix, value);
-        }
-
-        std::vector<EntityAttribute> AttributableNode::attributeWithName(const std::string& name) const {
-            return m_attributes.attributeWithName(name);
-        }
-
-        std::vector<EntityAttribute> AttributableNode::attributesWithPrefix(const std::string& prefix) const {
-            return m_attributes.attributesWithPrefix(prefix);
-        }
-
-        std::vector<EntityAttribute> AttributableNode::numberedAttributes(const std::string& prefix) const {
-            return m_attributes.numberedAttributes(prefix);
-        }
-
-        const std::string& AttributableNode::attribute(const std::string& name, const std::string& defaultValue) const {
-            const std::string* value = m_attributes.attribute(name);
-            if (value == nullptr)
-                return defaultValue;
             return *value;
         }
 
-        const std::string& AttributableNode::classname(const std::string& defaultClassname) const {
-            return m_classname.empty() ? defaultClassname : m_classname;
+        AttributableNode::AttributableNode(Entity entity) :
+        m_entity(std::move(entity)) {}
+
+        AttributableNode::~AttributableNode() = default;
+
+        const Entity& AttributableNode::entity() const {
+            return m_entity;
+        }
+
+        void AttributableNode::setEntity(Entity entity) {
+            const NotifyAttributeChange notifyChange(this);
+            updateIndexAndLinks(entity.attributes());
+            m_entity = std::move(entity);
+        }
+
+        void AttributableNode::setDefinition(Assets::EntityDefinition* definition) {
+            if (m_entity.definition() == definition) {
+                return;
+            }
+
+            const NotifyAttributeChange notifyChange(this);
+            m_entity.setDefinition(definition);
         }
 
         EntityAttributeSnapshot AttributableNode::attributeSnapshot(const std::string& name) const {
-            return m_attributes.snapshot(name);
-        }
-
-        bool AttributableNode::canAddOrUpdateAttribute(const std::string& name, const std::string& /* value */) const {
-            return isAttributeValueMutable(name);
-        }
-
-        bool AttributableNode::addOrUpdateAttribute(const std::string& name, const std::string& value) {
-            const NotifyAttributeChange notifyChange(this);
-
-            const Assets::AttributeDefinition* definition = Assets::EntityDefinition::safeGetAttributeDefinition(m_definition, name);
-            const std::string* oldValue = m_attributes.attribute(name);
-            if (oldValue != nullptr) {
-                removeAttributeFromIndex(name, *oldValue);
-                removeLinks(name, *oldValue);
-            }
-
-            m_attributes.addOrUpdateAttribute(name, value, definition);
-            addAttributeToIndex(name, value);
-            addLinks(name, value);
-
-            return oldValue == nullptr;
-        }
-
-        bool AttributableNode::canRenameAttribute(const std::string& name, const std::string& newName) const {
-            return isAttributeNameMutable(name) && isAttributeNameMutable(newName);
-        }
-
-        void AttributableNode::renameAttribute(const std::string& name, const std::string& newName) {
-            if (name == newName)
-                return;
-
-            const std::string* valuePtr = m_attributes.attribute(name);
-            if (valuePtr == nullptr)
-                return;
-
-            const std::string value = *valuePtr;
-			const NotifyAttributeChange notifyChange(this);
-
-            const Assets::AttributeDefinition* newDefinition = Assets::EntityDefinition::safeGetAttributeDefinition(m_definition, newName);
-
-            m_attributes.renameAttribute(name, newName, newDefinition);
-
-            updateAttributeIndex(name, value, newName, value);
-            updateLinks(name, value, newName, value);
-        }
-
-        bool AttributableNode::canRemoveAttribute(const std::string& name) const {
-            return isAttributeNameMutable(name) && isAttributeValueMutable(name);
-        }
-
-        void AttributableNode::removeAttribute(const std::string& name) {
-            const std::string* valuePtr = m_attributes.attribute(name);
-            if (valuePtr == nullptr)
-                return;
-
-            const NotifyAttributeChange notifyChange(this);
-
-            const std::string value = *valuePtr;
-            m_attributes.removeAttribute(name);
-
-            removeAttributeFromIndex(name, value);
-            removeLinks(name, value);
-        }
-
-        void AttributableNode::removeNumberedAttribute(const std::string& prefix) {
-            const auto attributes = m_attributes.numberedAttributes(prefix);
-            if (!attributes.empty()) {
-                const NotifyAttributeChange notifyChange(this);
-
-                for (const EntityAttribute& attribute : m_attributes.attributes()) {
-                    const std::string& name = attribute.name();
-                    const std::string& value = attribute.value();
-
-                    m_attributes.removeAttribute(name);
-                    removeAttributeFromIndex(name, value);
-                    removeLinks(name, value);
-                }
-            }
-        }
-
-        bool AttributableNode::isAttributeNameMutable(const std::string& name) const {
-            return doIsAttributeNameMutable(name);
-        }
-
-        bool AttributableNode::isAttributeValueMutable(const std::string& name) const {
-            return doIsAttributeValueMutable(name);
+            const auto* value = m_entity.attribute(name);
+            return value ? EntityAttributeSnapshot(name, *value) : EntityAttributeSnapshot(name);
         }
 
         AttributableNode::NotifyAttributeChange::NotifyAttributeChange(AttributableNode* node) :
@@ -277,32 +142,22 @@ namespace TrenchBroom {
         void AttributableNode::attributesWillChange() {}
 
         void AttributableNode::attributesDidChange(const vm::bbox3& oldPhysicalBounds) {
-            updateClassname();
             doAttributesDidChange(oldPhysicalBounds);
         }
 
-        void AttributableNode::updateClassname() {
-            m_classname = attribute(AttributeNames::Classname);
+        void AttributableNode::updateIndexAndLinks(const std::vector<EntityAttribute>& newAttributes) {
+            const auto oldSorted = kdl::vec_sort(m_entity.attributes());
+            const auto newSorted = kdl::vec_sort(newAttributes);
+
+            updateAttributeIndex(oldSorted, newSorted);
+            updateLinks(oldSorted, newSorted);
         }
 
-        void AttributableNode::addAttributesToIndex() {
-            for (const EntityAttribute& attribute : m_attributes.attributes())
-                addAttributeToIndex(attribute.name(), attribute.value());
-        }
-
-        void AttributableNode::removeAttributesFromIndex() {
-            for (const EntityAttribute& attribute : m_attributes.attributes())
-                removeAttributeFromIndex(attribute.name(), attribute.value());
-        }
-
-        void AttributableNode::updateAttributeIndex(const std::vector<EntityAttribute>& newAttributes) {
-            const auto oldSorted = kdl::col_sort(m_attributes.attributes());
-            const auto newSorted = kdl::col_sort(newAttributes);
-
-            auto oldIt = std::begin(oldSorted);
-            auto oldEnd = std::end(oldSorted);
-            auto newIt = std::begin(newSorted);
-            auto newEnd = std::end(newSorted);
+        void AttributableNode::updateAttributeIndex(const std::vector<EntityAttribute>& oldAttributes, const std::vector<EntityAttribute>& newAttributes) {
+            auto oldIt = std::begin(oldAttributes);
+            auto oldEnd = std::end(oldAttributes);
+            auto newIt = std::begin(newAttributes);
+            auto newEnd = std::end(newAttributes);
 
             while (oldIt != oldEnd && newIt != newEnd) {
                 const EntityAttribute& oldAttr = *oldIt;
@@ -334,6 +189,52 @@ namespace TrenchBroom {
             }
         }
 
+        void AttributableNode::updateLinks(const std::vector<EntityAttribute>& oldAttributes, const std::vector<EntityAttribute>& newAttributes) {
+            auto oldIt = std::begin(oldAttributes);
+            auto oldEnd = std::end(oldAttributes);
+            auto newIt = std::begin(newAttributes);
+            auto newEnd = std::end(newAttributes);
+
+            while (oldIt != oldEnd && newIt != newEnd) {
+                const EntityAttribute& oldAttr = *oldIt;
+                const EntityAttribute& newAttr = *newIt;
+
+                const int cmp = oldAttr.compare(newAttr);
+                if (cmp < 0) {
+                    removeLinks(oldAttr.name(), oldAttr.value());
+                    ++oldIt;
+                } else if (cmp > 0) {
+                    addLinks(newAttr.name(), newAttr.value());
+                    ++newIt;
+                } else {
+                    updateLinks(oldAttr.name(), oldAttr.value(), newAttr.name(), newAttr.value());
+                    ++oldIt; ++newIt;
+                }
+            }
+
+            while (oldIt != oldEnd) {
+                const EntityAttribute& oldAttr = *oldIt;
+                removeLinks(oldAttr.name(), oldAttr.value());
+                ++oldIt;
+            }
+
+            while (newIt != newEnd) {
+                const EntityAttribute& newAttr = *newIt;
+                addLinks(newAttr.name(), newAttr.value());
+                ++newIt;
+            }
+        }
+        
+        void AttributableNode::addAttributesToIndex() {
+            for (const EntityAttribute& attribute : m_entity.attributes())
+                addAttributeToIndex(attribute.name(), attribute.value());
+        }
+
+        void AttributableNode::removeAttributesFromIndex() {
+            for (const EntityAttribute& attribute : m_entity.attributes())
+                removeAttributeFromIndex(attribute.name(), attribute.value());
+        }
+
         void AttributableNode::addAttributeToIndex(const std::string& name, const std::string& value) {
             addToIndex(this, name, value);
         }
@@ -343,6 +244,9 @@ namespace TrenchBroom {
         }
 
         void AttributableNode::updateAttributeIndex(const std::string& oldName, const std::string& oldValue, const std::string& newName, const std::string& newValue) {
+            if (oldName == newName && oldValue == newValue) {
+                return;
+            }
             removeFromIndex(this, oldName, oldValue);
             addToIndex(this, newName, newValue);
         }
@@ -374,7 +278,7 @@ namespace TrenchBroom {
         bool AttributableNode::hasMissingSources() const {
             return (m_linkSources.empty() &&
                     m_killSources.empty() &&
-                    hasAttribute(AttributeNames::Targetname));
+                    m_entity.hasAttribute(AttributeNames::Targetname));
         }
 
         std::vector<std::string> AttributableNode::findMissingLinkTargets() const {
@@ -390,7 +294,7 @@ namespace TrenchBroom {
         }
 
         void AttributableNode::findMissingTargets(const std::string& prefix, std::vector<std::string>& result) const {
-            for (const EntityAttribute& attribute : m_attributes.numberedAttributes(prefix)) {
+            for (const EntityAttribute& attribute : m_entity.numberedAttributes(prefix)) {
                 const std::string& targetname = attribute.value();
                 if (targetname.empty()) {
                     result.push_back(attribute.name());
@@ -426,6 +330,9 @@ namespace TrenchBroom {
         }
 
         void AttributableNode::updateLinks(const std::string& oldName, const std::string& oldValue, const std::string& newName, const std::string& newValue) {
+            if (oldName == newName && oldValue == newValue) {
+                return;
+            }
             removeLinks(oldName, oldValue);
             addLinks(newName, newValue);
         }
@@ -452,8 +359,8 @@ namespace TrenchBroom {
                 std::vector<AttributableNode*>::iterator it = std::begin(m_linkTargets);
                 while (it != rem) {
                     AttributableNode* target = *it;
-                    const std::string& targetTargetname = target->attribute(AttributeNames::Targetname);
-                    if (targetTargetname == targetname) {
+                    const auto* targetTargetname = target->entity().attribute(AttributeNames::Targetname);
+                    if (targetTargetname && *targetTargetname == targetname) {
                         target->removeLinkSource(this);
                         --rem;
                         std::iter_swap(it, rem);
@@ -471,8 +378,8 @@ namespace TrenchBroom {
                 std::vector<AttributableNode*>::iterator it = std::begin(m_killTargets);
                 while (it != rem) {
                     AttributableNode* target = *it;
-                    const std::string& targetTargetname = target->attribute(AttributeNames::Targetname);
-                    if (targetTargetname == targetname) {
+                    const auto* targetTargetname = target->entity().attribute(AttributeNames::Targetname);
+                    if (targetTargetname && *targetTargetname == targetname) {
                         target->removeKillSource(this);
                         --rem;
                         std::iter_swap(it, rem);
@@ -493,7 +400,7 @@ namespace TrenchBroom {
         }
 
         void AttributableNode::addAllLinkTargets() {
-            for (const EntityAttribute& attribute : m_attributes.numberedAttributes(AttributeNames::Target)) {
+            for (const EntityAttribute& attribute : m_entity.numberedAttributes(AttributeNames::Target)) {
                 const std::string& targetname = attribute.value();
                 if (!targetname.empty()) {
                     std::vector<AttributableNode*> linkTargets;
@@ -512,7 +419,7 @@ namespace TrenchBroom {
         }
 
         void AttributableNode::addAllKillTargets() {
-            for (const EntityAttribute& attribute : m_attributes.numberedAttributes(AttributeNames::Killtarget)) {
+            for (const EntityAttribute& attribute : m_entity.numberedAttributes(AttributeNames::Killtarget)) {
                 const std::string& targetname = attribute.value();
                 if (!targetname.empty()) {
                     std::vector<AttributableNode*> killTargets;
@@ -597,7 +504,7 @@ namespace TrenchBroom {
             addAllLinkTargets();
             addAllKillTargets();
 
-            const std::string* targetname = m_attributes.attribute(AttributeNames::Targetname);
+            const std::string* targetname = m_entity.attribute(AttributeNames::Targetname);
             if (targetname != nullptr && !targetname->empty()) {
                 addAllLinkSources(*targetname);
                 addAllKillSources(*targetname);
@@ -657,12 +564,10 @@ namespace TrenchBroom {
         }
 
         AttributableNode::AttributableNode() :
-        Node(),
-        m_definition(nullptr) {}
+        Node() {}
 
         const std::string& AttributableNode::doGetName() const {
-            static const std::string defaultName("<missing classname>");
-            return classname(defaultName);
+            return m_entity.classname();
         }
 
         void AttributableNode::removeKillTarget(AttributableNode* attributable) {
@@ -671,7 +576,7 @@ namespace TrenchBroom {
         }
 
         bool operator==(const AttributableNode& lhs, const AttributableNode& rhs) {
-            return lhs.attributes() == rhs.attributes();
+            return lhs.entity() == rhs.entity();
         }
 
         bool operator!=(const AttributableNode& lhs, const AttributableNode& rhs) {

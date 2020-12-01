@@ -46,11 +46,21 @@ namespace TrenchBroom {
         }
 
         void GroupNode::setName(const std::string& name) {
-            addOrUpdateAttribute(AttributeNames::GroupName, name);
+            auto entity = m_entity;
+            entity.addOrUpdateAttribute(AttributeNames::GroupName, name);
+            setEntity(std::move(entity));
         }
 
         bool GroupNode::opened() const {
             return m_editState == Edit_Open;
+        }
+
+        bool GroupNode::hasOpenedDescendant() const {
+            return m_editState == Edit_DescendantOpen;
+        }
+
+        bool GroupNode::closed() const {
+            return m_editState == Edit_Closed;
         }
 
         void GroupNode::open() {
@@ -71,8 +81,11 @@ namespace TrenchBroom {
 
         void GroupNode::setAncestorEditState(const EditState editState) {
             visitParent(kdl::overload(
-                [=](auto&& thisLambda, GroupNode* group) -> void { group->setEditState(editState); group->visitParent(thisLambda); },
-                [=](auto&& thisLambda, auto* node)       -> void { node->visitParent(thisLambda); }
+                [=](auto&& thisLambda, WorldNode* world)   -> void { world->visitParent(thisLambda); },
+                [=](auto&& thisLambda, LayerNode* layer)   -> void { layer->visitParent(thisLambda); },
+                [=](auto&& thisLambda, GroupNode* group)   -> void { group->setEditState(editState); group->visitParent(thisLambda); },
+                [=](auto&& thisLambda, EntityNode* entity) -> void { entity->visitParent(thisLambda); },
+                [=](auto&& thisLambda, BrushNode* brush)   -> void { brush->visitParent(thisLambda); }
             ));
         }
 
@@ -84,12 +97,10 @@ namespace TrenchBroom {
             setAncestorEditState(Edit_Closed);
         }
 
-        bool GroupNode::hasOpenedDescendant() const {
-            return m_editState == Edit_DescendantOpen;
-        }
-
         const std::string& GroupNode::doGetName() const {
-            return attribute(AttributeNames::GroupName);
+            static const auto NoName = std::string("");
+            const auto* value = entity().attribute(AttributeNames::GroupName);
+            return value ? *value : NoName;
         }
 
         const vm::bbox3& GroupNode::doGetLogicalBounds() const {
@@ -194,14 +205,6 @@ namespace TrenchBroom {
         }
 
         void GroupNode::doAttributesDidChange(const vm::bbox3& /* oldBounds */) {
-        }
-
-        bool GroupNode::doIsAttributeNameMutable(const std::string& /* name */) const {
-            return false;
-        }
-
-        bool GroupNode::doIsAttributeValueMutable(const std::string& /* name */) const {
-            return false;
         }
 
         vm::vec3 GroupNode::doGetLinkSourceAnchor() const {

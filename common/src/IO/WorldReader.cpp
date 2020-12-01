@@ -21,6 +21,7 @@
 
 #include "IO/ParserStatus.h"
 #include "Model/BrushNode.h"
+#include "Model/Entity.h"
 #include "Model/EntityAttributes.h"
 #include "Model/LayerNode.h"
 #include "Model/LockState.h"
@@ -88,24 +89,27 @@ namespace TrenchBroom {
         }
 
         Model::ModelFactory& WorldReader::initialize(const Model::MapFormat format) {
-            m_world = std::make_unique<Model::WorldNode>(format);
+            m_world = std::make_unique<Model::WorldNode>(Model::Entity(), format);
             m_world->disableNodeTreeUpdates();
             return *m_world;
         }
 
         Model::Node* WorldReader::onWorldspawn(const std::vector<Model::EntityAttribute>& attributes, const ExtraAttributes& extraAttributes, ParserStatus& /* status */) {
-            m_world->setAttributes(attributes);
+            m_world->setEntity(Model::Entity(attributes));
             setExtraAttributes(m_world.get(), extraAttributes);
 
             // handle default layer attributes, which are stored in worldspawn
+            auto* defaultLayerNode = m_world->defaultLayer();
             for (const Model::EntityAttribute& attribute : attributes) {
                 if (attribute.name() == Model::AttributeNames::LayerColor
                     || attribute.name() == Model::AttributeNames::LayerOmitFromExport) {
-                    m_world->defaultLayer()->addOrUpdateAttribute(attribute.name(), attribute.value());
+                    auto defaultLayerEntity = defaultLayerNode->entity();
+                    defaultLayerEntity.addOrUpdateAttribute(attribute.name(), attribute.value());
+                    defaultLayerNode->setEntity(std::move(defaultLayerEntity));
                 } else if (attribute.hasNameAndValue(Model::AttributeNames::LayerLocked, Model::AttributeValues::LayerLockedValue)) {
-                    m_world->defaultLayer()->setLockState(Model::LockState::Lock_Locked);
+                    defaultLayerNode->setLockState(Model::LockState::Lock_Locked);
                 } else if (attribute.hasNameAndValue(Model::AttributeNames::LayerHidden, Model::AttributeValues::LayerHiddenValue)) {
-                    m_world->defaultLayer()->setVisibilityState(Model::VisibilityState::Visibility_Hidden);
+                    defaultLayerNode->setVisibilityState(Model::VisibilityState::Visibility_Hidden);
                 }
             }
             return m_world->defaultLayer();

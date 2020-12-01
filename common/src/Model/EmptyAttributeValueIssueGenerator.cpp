@@ -19,6 +19,7 @@
 
 #include "EmptyAttributeValueIssueGenerator.h"
 
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/EntityAttributes.h"
 #include "Model/Issue.h"
@@ -46,7 +47,7 @@ namespace TrenchBroom {
 
             std::string doGetDescription() const override {
                 const AttributableNode* attributableNode = static_cast<AttributableNode*>(node());
-                return "Attribute '" + m_attributeName + "' of " + attributableNode->classname() + " has an empty value.";
+                return "Attribute '" + m_attributeName + "' of " + attributableNode->name() + " has an empty value.";
             }
 
             const std::string& attributeName() const {
@@ -82,7 +83,7 @@ namespace TrenchBroom {
         }
 
         void EmptyAttributeValueIssueGenerator::doGenerate(AttributableNode* node, IssueList& issues) const {
-            for (const EntityAttribute& attribute : node->attributes()) {
+            for (const EntityAttribute& attribute : node->entity().attributes()) {
                 if (attribute.value().empty())
                     issues.push_back(new EmptyAttributeValueIssue(node, attribute.name()));
             }

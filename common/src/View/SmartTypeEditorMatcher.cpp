@@ -34,7 +34,7 @@ namespace TrenchBroom {
                 return false;
             }
             for (const auto* node : attributables) {
-                const auto* attrDef = node->attributeDefinition(name);
+                const auto* attrDef = Model::attributeDefinition(node, name);
                 if (attrDef == nullptr) {
                     return false;
                 }
@@ -51,7 +51,7 @@ namespace TrenchBroom {
         m_type(type) {}
 
         bool SmartTypeWithSameDefinitionEditorMatcher::doMatches(const std::string& name, const std::vector<Model::AttributableNode*>& attributables) const {
-            const Assets::AttributeDefinition* attrDef = Model::AttributableNode::selectAttributeDefinition(name, attributables);
+            const Assets::AttributeDefinition* attrDef = Model::selectAttributeDefinition(name, attributables);
             return attrDef != nullptr && attrDef->type() == m_type;
         }
     }
