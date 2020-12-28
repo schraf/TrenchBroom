@@ -36,8 +36,8 @@ namespace TrenchBroom {
         m_state{begin, 1, 1, false} {}
 
         void TokenizerBase::replaceState(std::string_view str) {
-            m_begin = str.begin();
-            m_end = str.begin() + str.length();
+            m_begin = str.data();
+            m_end = str.data() + str.length();
             // preserve m_escapableChars and m_escapeChar
             reset();
         }
